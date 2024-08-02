@@ -7,7 +7,7 @@ from rest_framework import serializers
 
 from accounts.models import Account
 from assets.const import Category, AllTypes
-from assets.models import Node, Asset, Platform
+from assets.models import Node, Asset, Platform, MyAsset
 from assets.serializers.asset.common import AssetProtocolsPermsSerializer
 from common.serializers import ResourceLabelsMixin
 from common.serializers.fields import ObjectRelatedField, LabeledChoiceField
@@ -45,6 +45,16 @@ class AssetPermedSerializer(OrgResourceModelSerializerMixin, ResourceLabelsMixin
             .annotate(category=F("platform__category")) \
             .annotate(type=F("platform__type"))
         return queryset
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        my_asset = MyAsset.objects.filter(asset=instance.pk, user=self.context['request'].user).first()
+        if my_asset:
+            custom_attrs = my_asset.custom_attrs
+            for key, value in custom_attrs.items():
+                if key in representation:
+                    representation[key] = value
+        return representation
 
 
 class NodePermedSerializer(serializers.ModelSerializer):

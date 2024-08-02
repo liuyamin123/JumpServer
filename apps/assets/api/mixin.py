@@ -2,7 +2,7 @@ from typing import List
 
 from rest_framework.request import Request
 
-from assets.models import Node, Platform, Protocol
+from assets.models import Node, Platform, Protocol, MyAsset
 from assets.utils import get_node_from_request, is_query_node_all_assets
 from common.utils import lazyproperty, timeit
 
@@ -94,6 +94,12 @@ class SerializeToTreeNodeMixin:
                 if root_assets_count > 1000:
                     continue
                 root_assets_count += 1
+            my_asset = MyAsset.objects.filter(asset=asset.id, user=self.request.user).first()
+            if my_asset:
+                custom_attrs = my_asset.custom_attrs
+                for key, value in custom_attrs.items():
+                    if hasattr(asset, key):
+                        setattr(asset, key, value)
             data.append({
                 'id': str(asset.id),
                 'name': asset.name,
