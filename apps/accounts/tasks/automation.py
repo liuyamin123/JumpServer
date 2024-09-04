@@ -29,6 +29,7 @@ def task_activity_callback(self, pid, trigger, tp, *args, **kwargs):
 
 @shared_task(
     queue='ansible', verbose_name=_('Account execute automation'),
+    description='执行账号推送，更改密码，验证账号，移除账号，收集账号，验证网关账号任务',
     activity_callback=task_activity_callback
 )
 def execute_account_automation_task(pid, trigger, tp):
@@ -54,7 +55,7 @@ def record_task_activity_callback(self, record_ids, *args, **kwargs):
 
 
 @shared_task(
-    queue='ansible', verbose_name=_('Execute automation record'),
+    queue='ansible', verbose_name=_('Execute automation record'), description='手动执行账号改密',
     activity_callback=record_task_activity_callback
 )
 def execute_automation_record_task(record_ids, tp):
