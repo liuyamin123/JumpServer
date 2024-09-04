@@ -197,7 +197,7 @@ class SessionViewSet(RecordViewLogMixin, OrgBulkModelViewSet):
             # so we need to use select_for_update only for have not prefetch_related and annotate
             queryset = queryset.select_for_update()
         return queryset
-    
+
     def perform_create(self, serializer):
         if hasattr(self.request.user, 'terminal'):
             serializer.validated_data["terminal"] = self.request.user.terminal
@@ -245,6 +245,9 @@ class SessionReplayViewSet(AsyncApiMixin, RecordViewLogMixin, viewsets.ViewSet):
             tp = 'asciicast'
         elif url.endswith('.replay.mp4'):
             tp = 'mp4'
+        elif url.endswith('replay.json'):
+            # 新版本将返回元数据信息
+            tp = 'replay_meta'
         elif (getattr(session.terminal, 'type', None) in all_guacamole_types) or \
                 (session.protocol in ('rdp', 'vnc')):
             tp = 'guacamole'
@@ -281,7 +284,8 @@ class SessionReplayViewSet(AsyncApiMixin, RecordViewLogMixin, viewsets.ViewSet):
     def retrieve(self, request, *args, **kwargs):
         session_id = kwargs.get('pk')
         session = get_object_or_404(Session, id=session_id)
-
+        part_file = request.query_params.get('part_file')
+        # todo: 下载 session 的  part replay file
         storage = ReplayStorageHandler(session)
         local_path, url = storage.get_file_path_url()
         if local_path is None:
