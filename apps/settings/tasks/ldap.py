@@ -16,13 +16,16 @@ from settings.notifications import LDAPImportMessage
 from users.models import User
 from ..utils import LDAPSyncUtil, LDAPServerUtil, LDAPImportUtil
 
-__all__ = ['sync_ldap_user', 'import_ldap_user_periodic', 'import_ldap_user']
+__all__ = [
+    'sync_ldap_user', 'import_ldap_user_periodic', 'import_ldap_ha_user_periodic',
+    'import_ldap_user', 'import_ldap_ha_user'
+]
 
 logger = get_logger(__file__)
 
 
-def sync_ldap_user():
-    LDAPSyncUtil().perform_sync()
+def sync_ldap_user(category='ldap'):
+    LDAPSyncUtil(category=category).perform_sync()
 
 
 @shared_task(verbose_name=_('Periodic import ldap user'))
@@ -63,6 +66,44 @@ def import_ldap_user():
             LDAPImportMessage(user, extra_kwargs).publish()
 
 
+@shared_task(verbose_name=_('Periodic import ldap user'))
+def import_ldap_ha_user():
+    start_time = time.time()
+    time_start_display = local_now_display()
+    logger.info("Start import ldap user task")
+    util_server = LDAPServerUtil(category='ldap_ha')
+    util_import = LDAPImportUtil()
+    users = util_server.search()
+    if settings.XPACK_ENABLED:
+        org_ids = settings.AUTH_LDAP_HA_SYNC_ORG_IDS
+        default_org = None
+    else:
+        # 社区版默认导入Default组织
+        org_ids = [Organization.DEFAULT_ID]
+        default_org = Organization.default()
+    orgs = list(set([Organization.get_instance(org_id, default=default_org) for org_id in org_ids]))
+    new_users, errors = util_import.perform_import(users, orgs)
+    if errors:
+        logger.error("Imported LDAP users errors: {}".format(errors))
+    else:
+        logger.info('Imported {} users successfully'.format(len(users)))
+    if settings.AUTH_LDAP_HA_SYNC_RECEIVERS:
+        user_ids = settings.AUTH_LDAP_HA_SYNC_RECEIVERS
+        recipient_list = User.objects.filter(id__in=list(user_ids))
+        end_time = time.time()
+        extra_kwargs = {
+            'orgs': orgs,
+            'end_time': end_time,
+            'start_time': start_time,
+            'time_start_display': time_start_display,
+            'new_users': new_users,
+            'errors': errors,
+            'cost_time': end_time - start_time,
+        }
+        for user in recipient_list:
+            LDAPImportMessage(user, extra_kwargs).publish()
+
+
 @shared_task(verbose_name=_('Registration periodic import ldap user task'))
 @after_app_ready_start
 def import_ldap_user_periodic(**kwargs):
@@ -80,6 +121,31 @@ def import_ldap_user_periodic(**kwargs):
     tasks = {
         task_name: {
             'task': import_ldap_user.name,
+            'interval': interval,
+            'crontab': crontab,
+            'enabled': enabled
+        }
+    }
+    create_or_update_celery_periodic_tasks(tasks)
+
+
+@shared_task(verbose_name=_('Registration periodic import ldap user task'))
+@after_app_ready_start
+def import_ldap_ha_user_periodic(**kwargs):
+    task_name = 'import_ldap_ha_user_periodic'
+    interval = kwargs.get('AUTH_LDAP_HA_SYNC_INTERVAL', settings.AUTH_LDAP_SYNC_INTERVAL)
+    enabled = kwargs.get('AUTH_LDAP_HA_SYNC_IS_PERIODIC', settings.AUTH_LDAP_SYNC_IS_PERIODIC)
+    crontab = kwargs.get('AUTH_LDAP_HA_SYNC_CRONTAB', settings.AUTH_LDAP_SYNC_CRONTAB)
+    if isinstance(interval, int):
+        interval = interval * 3600
+    else:
+        interval = None
+    if crontab:
+        # 优先使用 crontab
+        interval = None
+    tasks = {
+        task_name: {
+            'task': import_ldap_ha_user.name,
             'interval': interval,
             'crontab': crontab,
             'enabled': enabled
